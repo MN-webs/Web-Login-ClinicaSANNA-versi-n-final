@@ -1,19 +1,31 @@
-# Usamos la imagen oficial y estable de Tomcat con Java 17
+# --- Etapa 1: Compilación Manual del Backend ---
+FROM openjdk:17-jdk-slim AS builder
+WORKDIR /app
+
+# 1. Copiar la estructura de directorios desde tu GitHub
+COPY src/ ./src/
+COPY web/ ./web/
+
+# 2. Descargar el jar de Jakarta Servlet necesario para compilar tus Servlets
+ADD https://repo1.maven.org/maven2/jakarta/servlet/jakarta.servlet-api/6.0.0/jakarta.servlet-api-6.0.0.jar /app/servlet-api.jar
+
+# 3. Crear el directorio de salida y compilar todos tus archivos .java
+RUN mkdir -p /app/classes && \
+    find src -name "*.java" > sources.txt && \
+    javac -cp /app/servlet-api.jar -d /app/classes @sources.txt
+
+# --- Etapa 2: Servidor de Producción Tomcat ---
 FROM tomcat:10.1-jre17-temurin-jammy
 WORKDIR /usr/local/tomcat
 
-# 1. Limpiar aplicaciones por defecto para evitar conflictos de rutas
+# Limpiar las aplicaciones por defecto de Tomcat
 RUN rm -rf webapps/*
 
-# 2. Copiar todas tus vistas del Frontend (JSPs, HTML, CSS) directamente a la raíz de Tomcat
+# 1. Copiar las vistas estáticas y JSPs del Frontend a la raíz
 COPY web/ webapps/ROOT/
 
-# 3. Copiar las clases compiladas del Backend (Servlets, Singleton, MVC) al directorio de ejecución de Tomcat
-# Nota: NetBeans compila automáticamente tus archivos .java dentro de build/web/WEB-INF/classes
-COPY build/web/WEB-INF/classes/ webapps/ROOT/WEB-INF/classes/
+# 2. Inyectar las clases del Backend compiladas en la Etapa 1 al directorio correcto de Tomcat
+COPY --from=builder /app/classes/ webapps/ROOT/WEB-INF/classes/
 
-# 4. Copiar las librerías necesarias (.jar) si es que existen dentro de tu entorno de compilación
-COPY build/web/WEB-INF/lib/ webapps/ROOT/WEB-INF/lib/
-
-# 5. Mapear dinámicamente el puerto que Railway te asigne en tiempo de ejecución
+# 3. Mapear dinámicamente el puerto asignado por Railway
 CMD ["sh", "-c", "sed -i 's/port=\"8080\"/port=\"'\"$PORT\"'\"/g' conf/server.xml && catalina.sh run"]

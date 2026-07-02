@@ -1,31 +1,29 @@
-# --- Etapa 1: Compilación Manual del Backend usando Temurin JDK ---
+# --- Etapa 1: Compilación Nativa ---
 FROM eclipse-temurin:17-jdk-jammy AS builder
 WORKDIR /app
 
-# 1. Copiar la estructura de directorios desde tu GitHub
+# Copiar el código fuente y las vistas
 COPY src/ ./src/
 COPY web/ ./web/
 
-# 2. Descargar el jar de Jakarta Servlet oficial para compilar tus Servlets
+# Descargar la API de Servlets para poder compilar tus controladores
 ADD https://repo1.maven.org/maven2/jakarta/servlet/jakarta.servlet-api/6.0.0/jakarta.servlet-api-6.0.0.jar /app/servlet-api.jar
 
-# 3. Crear el directorio de salida y compilar todos tus archivos .java de forma nativa
+# Compilar estructuralmente tolerando advertencias
 RUN mkdir -p /app/classes && \
-    find src -name "*.java" > sources.txt && \
-    javac -cp /app/servlet-api.jar -d /app/classes @sources.txt
+    javac -cp /app/servlet-api.jar -d /app/classes src/java/*/*.java src/java/*/*/*.java 2>/dev/null || \
+    javac -cp /app/servlet-api.jar -d /app/classes $(find src -name "*.java")
 
-# --- Etapa 2: Servidor de Producción Tomcat ---
+# --- Etapa 2: Distribución en Tomcat ---
 FROM tomcat:10.1-jre17-temurin-jammy
 WORKDIR /usr/local/tomcat
 
-# Limpiar las aplicaciones por defecto de Tomcat para evitar colisiones de rutas
+# Limpiar entorno por defecto
 RUN rm -rf webapps/*
 
-# 1. Copiar las vistas estáticas y JSPs del Frontend a la raíz de la aplicación
+# Copiar Frontend y Backend al contenedor final
 COPY web/ webapps/ROOT/
-
-# 2. Inyectar las clases del Backend compiladas en la Etapa 1 al directorio de ejecución de Tomcat
 COPY --from=builder /app/classes/ webapps/ROOT/WEB-INF/classes/
 
-# 3. Mapear dinámicamente el puerto asignado por Railway en tiempo de ejecución
+# Ajustar puerto dinámico de Railway
 CMD ["sh", "-c", "sed -i 's/port=\"8080\"/port=\"'\"$PORT\"'\"/g' conf/server.xml && catalina.sh run"]
